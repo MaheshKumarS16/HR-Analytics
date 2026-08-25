@@ -2,156 +2,320 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Load dataset
+# ---------------------------------------
+# 1. Load Dataset
+# ---------------------------------------
+
 df = pd.read_csv("data/Human Resources.csv")
 
-# -----------------------------
-# 1. Basic Data Understanding
-# -----------------------------
-
 print("Dataset Shape:", df.shape)
+
 print("\nColumns:")
 print(df.columns.tolist())
 
-print("\nMissing Values:")
-print(df.isnull().sum())
+# ---------------------------------------
+# 2. Data Cleaning
+# ---------------------------------------
 
-print("\nDuplicate Rows:", df.duplicated().sum())
+# Convert date columns
+df["birthdate"] = pd.to_datetime(df["birthdate"], errors="coerce")
+df["hire_date"] = pd.to_datetime(df["hire_date"], errors="coerce")
+df["termdate"] = pd.to_datetime(df["termdate"], errors="coerce")
 
-print("\nDataset Summary:")
-print(df.describe())
+# Remove unnecessary whitespace from text columns
+text_columns = [
+    "gender",
+    "department",
+    "jobtitle",
+    "location",
+    "location_city",
+    "location_state"
+]
 
-# -----------------------------
-# 2. Attrition Distribution
-# -----------------------------
+for column in text_columns:
+    df[column] = df[column].astype(str).str.strip()
 
-attrition_count = df["Attrition"].value_counts()
+# ---------------------------------------
+# 3. Employee Status
+# ---------------------------------------
 
-print("\nAttrition Distribution:")
-print(attrition_count)
+df["status"] = df["termdate"].isna().map({
+    True: "Active",
+    False: "Terminated"
+})
 
-attrition_rate = (df["Attrition"] == "Yes").mean() * 100
-print(f"\nOverall Attrition Rate: {attrition_rate:.2f}%")
+print("\nEmployee Status:")
+print(df["status"].value_counts())
 
-# -----------------------------
-# 3. Attrition by Department
-# -----------------------------
+# ---------------------------------------
+# 4. Calculate Age
+# ---------------------------------------
 
-department_attrition = pd.crosstab(
-    df["Department"],
-    df["Attrition"],
-    normalize="index"
-) * 100
+reference_date = pd.Timestamp.today()
 
-print("\nAttrition by Department:")
-print(department_attrition)
+df["age"] = (
+    (reference_date - df["birthdate"]).dt.days / 365.25
+).round(1)
 
-# -----------------------------
-# 4. Attrition by Job Role
-# -----------------------------
+# ---------------------------------------
+# 5. Calculate Tenure
+# ---------------------------------------
 
-role_attrition = pd.crosstab(
-    df["JobRole"],
-    df["Attrition"],
-    normalize="index"
-) * 100
+end_date = df["termdate"].fillna(reference_date)
 
-print("\nAttrition by Job Role:")
-print(role_attrition)
+df["tenure_years"] = (
+    (end_date - df["hire_date"]).dt.days / 365.25
+).round(1)
 
-# -----------------------------
-# 5. Attrition by Overtime
-# -----------------------------
+# ---------------------------------------
+# 6. Overall Workforce Metrics
+# ---------------------------------------
 
-overtime_attrition = pd.crosstab(
-    df["OverTime"],
-    df["Attrition"],
-    normalize="index"
-) * 100
+total_employees = len(df)
 
-print("\nAttrition by Overtime:")
-print(overtime_attrition)
+active_employees = (df["status"] == "Active").sum()
 
-# -----------------------------
-# 6. Create Age Groups
-# -----------------------------
+terminated_employees = (df["status"] == "Terminated").sum()
 
-bins = [17, 25, 35, 45, 55, 65]
-labels = ["18-25", "26-35", "36-45", "46-55", "56-65"]
-
-df["AgeGroup"] = pd.cut(
-    df["Age"],
-    bins=bins,
-    labels=labels
+termination_rate = (
+    terminated_employees / total_employees * 100
 )
 
-age_attrition = pd.crosstab(
-    df["AgeGroup"],
-    df["Attrition"],
-    normalize="index"
-) * 100
+print("\nHR Workforce Metrics")
+print("---------------------")
+print("Total Employees:", total_employees)
+print("Active Employees:", active_employees)
+print("Terminated Employees:", terminated_employees)
+print(f"Termination Rate: {termination_rate:.2f}%")
 
-print("\nAttrition by Age Group:")
-print(age_attrition)
+# ---------------------------------------
+# 7. Employees by Department
+# ---------------------------------------
 
-# -----------------------------
-# 7. Visualizations
-# -----------------------------
+department_count = df["department"].value_counts()
 
-sns.set_theme(style="whitegrid")
-
-# Attrition distribution
-plt.figure(figsize=(8, 5))
-sns.countplot(data=df, x="Attrition")
-plt.title("Employee Attrition Distribution")
-plt.xlabel("Attrition")
-plt.ylabel("Number of Employees")
-plt.tight_layout()
-plt.savefig("results/attrition_distribution.png", dpi=300)
-plt.show()
-
-# Attrition by department
-plt.figure(figsize=(9, 5))
-sns.barplot(
-    data=df,
-    x="Department",
-    y=(df["Attrition"] == "Yes").astype(int)
-)
-plt.title("Attrition by Department")
-plt.xlabel("Department")
-plt.ylabel("Attrition Rate")
-plt.tight_layout()
-plt.savefig("results/attrition_by_department.png", dpi=300)
-plt.show()
-
-# Attrition by job role
-role_rate = df.groupby("JobRole")["Attrition"].apply(
-    lambda x: (x == "Yes").mean() * 100
-).sort_values(ascending=False)
+print("\nEmployees by Department:")
+print(department_count)
 
 plt.figure(figsize=(10, 6))
-role_rate.plot(kind="bar")
-plt.title("Attrition Rate by Job Role")
-plt.xlabel("Job Role")
-plt.ylabel("Attrition Rate (%)")
+
+department_count.plot(kind="bar")
+
+plt.title("Employees by Department")
+plt.xlabel("Department")
+plt.ylabel("Number of Employees")
 plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
-plt.savefig("results/attrition_by_job_role.png", dpi=300)
-plt.show()
 
-# Attrition by overtime
-overtime_rate = df.groupby("OverTime")["Attrition"].apply(
-    lambda x: (x == "Yes").mean() * 100
+plt.savefig(
+    "results/employees_by_department.png",
+    dpi=300
 )
 
+plt.show()
+
+# ---------------------------------------
+# 8. Employee Status Distribution
+# ---------------------------------------
+
+status_count = df["status"].value_counts()
+
 plt.figure(figsize=(8, 5))
-overtime_rate.plot(kind="bar")
-plt.title("Attrition Rate by Overtime")
-plt.xlabel("Overtime")
-plt.ylabel("Attrition Rate (%)")
+
+status_count.plot(kind="bar")
+
+plt.title("Employee Status Distribution")
+plt.xlabel("Employee Status")
+plt.ylabel("Number of Employees")
 plt.xticks(rotation=0)
 plt.tight_layout()
-plt.savefig("results/attrition_by_overtime.png", dpi=300)
+
+plt.savefig(
+    "results/employee_status_distribution.png",
+    dpi=300
+)
+
 plt.show()
+
+# ---------------------------------------
+# 9. Termination Rate by Department
+# ---------------------------------------
+
+department_termination = (
+    df.groupby("department")["status"]
+    .apply(lambda x: (x == "Terminated").mean() * 100)
+    .sort_values(ascending=False)
+)
+
+print("\nTermination Rate by Department:")
+print(department_termination)
+
+plt.figure(figsize=(10, 6))
+
+department_termination.plot(kind="bar")
+
+plt.title("Termination Rate by Department")
+plt.xlabel("Department")
+plt.ylabel("Termination Rate (%)")
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+
+plt.savefig(
+    "results/termination_rate_by_department.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 10. Employees by Gender
+# ---------------------------------------
+
+gender_count = df["gender"].value_counts()
+
+print("\nEmployees by Gender:")
+print(gender_count)
+
+plt.figure(figsize=(8, 5))
+
+gender_count.plot(kind="bar")
+
+plt.title("Employee Distribution by Gender")
+plt.xlabel("Gender")
+plt.ylabel("Number of Employees")
+plt.xticks(rotation=0)
+plt.tight_layout()
+
+plt.savefig(
+    "results/employees_by_gender.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 11. Employee Age Distribution
+# ---------------------------------------
+
+plt.figure(figsize=(9, 5))
+
+sns.histplot(
+    data=df,
+    x="age",
+    bins=15
+)
+
+plt.title("Employee Age Distribution")
+plt.xlabel("Age")
+plt.ylabel("Number of Employees")
+plt.tight_layout()
+
+plt.savefig(
+    "results/employee_age_distribution.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 12. Employees by Job Title
+# ---------------------------------------
+
+job_title_count = df["jobtitle"].value_counts().head(15)
+
+print("\nTop 15 Job Titles:")
+print(job_title_count)
+
+plt.figure(figsize=(10, 7))
+
+job_title_count.sort_values().plot(kind="barh")
+
+plt.title("Top 15 Job Titles by Employee Count")
+plt.xlabel("Number of Employees")
+plt.ylabel("Job Title")
+plt.tight_layout()
+
+plt.savefig(
+    "results/top_job_titles.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 13. Hiring Trend by Year
+# ---------------------------------------
+
+hire_year = df["hire_date"].dt.year.value_counts().sort_index()
+
+print("\nEmployees Hired by Year:")
+print(hire_year)
+
+plt.figure(figsize=(10, 5))
+
+hire_year.plot(kind="line", marker="o")
+
+plt.title("Employee Hiring Trend")
+plt.xlabel("Hire Year")
+plt.ylabel("Number of Employees")
+plt.grid(True)
+plt.tight_layout()
+
+plt.savefig(
+    "results/hiring_trend.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 14. Termination Trend by Year
+# ---------------------------------------
+
+termination_year = (
+    df.loc[df["status"] == "Terminated", "termdate"]
+    .dt.year
+    .value_counts()
+    .sort_index()
+)
+
+print("\nTerminations by Year:")
+print(termination_year)
+
+plt.figure(figsize=(10, 5))
+
+termination_year.plot(kind="line", marker="o")
+
+plt.title("Employee Termination Trend")
+plt.xlabel("Termination Year")
+plt.ylabel("Number of Terminations")
+plt.grid(True)
+plt.tight_layout()
+
+plt.savefig(
+    "results/termination_trend.png",
+    dpi=300
+)
+
+plt.show()
+
+# ---------------------------------------
+# 15. Average Tenure
+# ---------------------------------------
+
+average_tenure = df["tenure_years"].mean()
+
+print(
+    f"\nAverage Employee Tenure: {average_tenure:.2f} years"
+)
+
+# ---------------------------------------
+# 16. Save Cleaned Dataset
+# ---------------------------------------
+
+df.to_csv(
+    "results/cleaned_hr_data.csv",
+    index=False
+)
 
 print("\nHR Analytics completed successfully.")
