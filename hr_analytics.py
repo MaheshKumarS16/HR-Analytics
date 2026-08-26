@@ -1,30 +1,75 @@
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ---------------------------------------
-# 1. Load Dataset
-# ---------------------------------------
 
-df = pd.read_csv("data/Human Resources.csv")
+# ============================================================
+# 1. PROJECT PATHS
+# ============================================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATASET_PATH = os.path.join(
+    BASE_DIR,
+    "dataset",
+    "Human Resources.csv"
+)
+
+RESULTS_DIR = os.path.join(
+    BASE_DIR,
+    "results"
+)
+
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+
+# ============================================================
+# 2. LOAD DATASET
+# ============================================================
+
+df = pd.read_csv(DATASET_PATH)
 
 print("Dataset Shape:", df.shape)
 
 print("\nColumns:")
 print(df.columns.tolist())
 
-# ---------------------------------------
-# 2. Data Cleaning
-# ---------------------------------------
 
-# Convert date columns
-df["birthdate"] = pd.to_datetime(df["birthdate"], errors="coerce")
-df["hire_date"] = pd.to_datetime(df["hire_date"], errors="coerce")
-df["termdate"] = pd.to_datetime(df["termdate"], errors="coerce")
+# ============================================================
+# 3. DATA CLEANING
+# ============================================================
 
-# Remove unnecessary whitespace from text columns
+# Convert date columns safely.
+# utc=True handles mixed date/time formats consistently.
+
+df["birthdate"] = pd.to_datetime(
+    df["birthdate"],
+    errors="coerce",
+    format="mixed",
+    utc=True
+)
+
+df["hire_date"] = pd.to_datetime(
+    df["hire_date"],
+    errors="coerce",
+    format="mixed",
+    utc=True
+)
+
+df["termdate"] = pd.to_datetime(
+    df["termdate"],
+    errors="coerce",
+    format="mixed",
+    utc=True
+)
+
+
+# Clean text columns
+
 text_columns = [
     "gender",
+    "race",
     "department",
     "jobtitle",
     "location",
@@ -33,11 +78,28 @@ text_columns = [
 ]
 
 for column in text_columns:
-    df[column] = df[column].astype(str).str.strip()
+    df[column] = (
+        df[column]
+        .fillna("Unknown")
+        .astype(str)
+        .str.strip()
+    )
 
-# ---------------------------------------
-# 3. Employee Status
-# ---------------------------------------
+
+# Remove duplicate records
+
+df = df.drop_duplicates()
+
+
+print("\nDate Columns:")
+print(df[
+    ["birthdate", "hire_date", "termdate"]
+].dtypes)
+
+
+# ============================================================
+# 4. EMPLOYEE STATUS
+# ============================================================
 
 df["status"] = df["termdate"].isna().map({
     True: "Active",
@@ -47,55 +109,85 @@ df["status"] = df["termdate"].isna().map({
 print("\nEmployee Status:")
 print(df["status"].value_counts())
 
-# ---------------------------------------
-# 4. Calculate Age
-# ---------------------------------------
 
-reference_date = pd.Timestamp.today()
+# ============================================================
+# 5. AGE
+# ============================================================
+
+today = pd.Timestamp.now(tz="UTC")
 
 df["age"] = (
-    (reference_date - df["birthdate"]).dt.days / 365.25
+    (today - df["birthdate"]).dt.days / 365.25
 ).round(1)
 
-# ---------------------------------------
-# 5. Calculate Tenure
-# ---------------------------------------
 
-end_date = df["termdate"].fillna(reference_date)
+# ============================================================
+# 6. EMPLOYEE TENURE
+# ============================================================
+
+# Terminated employees:
+#     hire date → termination date
+#
+# Active employees:
+#     hire date → today
+
+end_date = df["termdate"].fillna(today)
 
 df["tenure_years"] = (
     (end_date - df["hire_date"]).dt.days / 365.25
 ).round(1)
 
-# ---------------------------------------
-# 6. Overall Workforce Metrics
-# ---------------------------------------
+
+# ============================================================
+# 7. KEY WORKFORCE METRICS
+# ============================================================
 
 total_employees = len(df)
 
-active_employees = (df["status"] == "Active").sum()
+active_employees = (
+    df["status"] == "Active"
+).sum()
 
-terminated_employees = (df["status"] == "Terminated").sum()
+terminated_employees = (
+    df["status"] == "Terminated"
+).sum()
 
 termination_rate = (
-    terminated_employees / total_employees * 100
+    terminated_employees /
+    total_employees
+) * 100
+
+
+average_age = df["age"].mean()
+
+average_tenure = df["tenure_years"].mean()
+
+
+print("\n")
+print("=" * 50)
+print("HR WORKFORCE METRICS")
+print("=" * 50)
+
+print(f"Total Employees: {total_employees}")
+print(f"Active Employees: {active_employees}")
+print(f"Terminated Employees: {terminated_employees}")
+print(f"Overall Termination Rate: {termination_rate:.2f}%")
+print(f"Average Employee Age: {average_age:.1f} years")
+print(f"Average Employee Tenure: {average_tenure:.1f} years")
+
+
+# ============================================================
+# 8. EMPLOYEES BY DEPARTMENT
+# ============================================================
+
+department_count = (
+    df["department"]
+    .value_counts()
 )
-
-print("\nHR Workforce Metrics")
-print("---------------------")
-print("Total Employees:", total_employees)
-print("Active Employees:", active_employees)
-print("Terminated Employees:", terminated_employees)
-print(f"Termination Rate: {termination_rate:.2f}%")
-
-# ---------------------------------------
-# 7. Employees by Department
-# ---------------------------------------
-
-department_count = df["department"].value_counts()
 
 print("\nEmployees by Department:")
 print(department_count)
+
 
 plt.figure(figsize=(10, 6))
 
@@ -108,17 +200,24 @@ plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
 
 plt.savefig(
-    "results/employees_by_department.png",
+    os.path.join(
+        RESULTS_DIR,
+        "employees_by_department.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 8. Employee Status Distribution
-# ---------------------------------------
 
-status_count = df["status"].value_counts()
+# ============================================================
+# 9. EMPLOYEE STATUS DISTRIBUTION
+# ============================================================
+
+status_count = (
+    df["status"]
+    .value_counts()
+)
 
 plt.figure(figsize=(8, 5))
 
@@ -131,24 +230,32 @@ plt.xticks(rotation=0)
 plt.tight_layout()
 
 plt.savefig(
-    "results/employee_status_distribution.png",
+    os.path.join(
+        RESULTS_DIR,
+        "employee_status_distribution.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 9. Termination Rate by Department
-# ---------------------------------------
+
+# ============================================================
+# 10. TERMINATION RATE BY DEPARTMENT
+# ============================================================
 
 department_termination = (
     df.groupby("department")["status"]
-    .apply(lambda x: (x == "Terminated").mean() * 100)
+    .apply(
+        lambda x:
+        (x == "Terminated").mean() * 100
+    )
     .sort_values(ascending=False)
 )
 
 print("\nTermination Rate by Department:")
 print(department_termination)
+
 
 plt.figure(figsize=(10, 6))
 
@@ -161,20 +268,28 @@ plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
 
 plt.savefig(
-    "results/termination_rate_by_department.png",
+    os.path.join(
+        RESULTS_DIR,
+        "termination_rate_by_department.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 10. Employees by Gender
-# ---------------------------------------
 
-gender_count = df["gender"].value_counts()
+# ============================================================
+# 11. EMPLOYEES BY GENDER
+# ============================================================
+
+gender_count = (
+    df["gender"]
+    .value_counts()
+)
 
 print("\nEmployees by Gender:")
 print(gender_count)
+
 
 plt.figure(figsize=(8, 5))
 
@@ -187,15 +302,57 @@ plt.xticks(rotation=0)
 plt.tight_layout()
 
 plt.savefig(
-    "results/employees_by_gender.png",
+    os.path.join(
+        RESULTS_DIR,
+        "employees_by_gender.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 11. Employee Age Distribution
-# ---------------------------------------
+
+# ============================================================
+# 12. TERMINATION RATE BY GENDER
+# ============================================================
+
+gender_termination = (
+    df.groupby("gender")["status"]
+    .apply(
+        lambda x:
+        (x == "Terminated").mean() * 100
+    )
+    .sort_values(ascending=False)
+)
+
+print("\nTermination Rate by Gender:")
+print(gender_termination)
+
+
+plt.figure(figsize=(8, 5))
+
+gender_termination.plot(kind="bar")
+
+plt.title("Termination Rate by Gender")
+plt.xlabel("Gender")
+plt.ylabel("Termination Rate (%)")
+plt.xticks(rotation=0)
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(
+        RESULTS_DIR,
+        "termination_rate_by_gender.png"
+    ),
+    dpi=300
+)
+
+plt.close()
+
+
+# ============================================================
+# 13. AGE DISTRIBUTION
+# ============================================================
 
 plt.figure(figsize=(9, 5))
 
@@ -211,69 +368,102 @@ plt.ylabel("Number of Employees")
 plt.tight_layout()
 
 plt.savefig(
-    "results/employee_age_distribution.png",
+    os.path.join(
+        RESULTS_DIR,
+        "employee_age_distribution.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 12. Employees by Job Title
-# ---------------------------------------
 
-job_title_count = df["jobtitle"].value_counts().head(15)
+# ============================================================
+# 14. TOP JOB TITLES
+# ============================================================
+
+job_title_count = (
+    df["jobtitle"]
+    .value_counts()
+    .head(15)
+    .sort_values()
+)
 
 print("\nTop 15 Job Titles:")
-print(job_title_count)
+print(job_title_count.sort_values(ascending=False))
+
 
 plt.figure(figsize=(10, 7))
 
-job_title_count.sort_values().plot(kind="barh")
+job_title_count.plot(kind="barh")
 
-plt.title("Top 15 Job Titles by Employee Count")
+plt.title(
+    "Top 15 Job Titles by Employee Count"
+)
+
 plt.xlabel("Number of Employees")
 plt.ylabel("Job Title")
 plt.tight_layout()
 
 plt.savefig(
-    "results/top_job_titles.png",
+    os.path.join(
+        RESULTS_DIR,
+        "top_job_titles.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 13. Hiring Trend by Year
-# ---------------------------------------
 
-hire_year = df["hire_date"].dt.year.value_counts().sort_index()
+# ============================================================
+# 15. HIRING TREND
+# ============================================================
+
+hire_year = (
+    df["hire_date"]
+    .dt.year
+    .value_counts()
+    .sort_index()
+)
 
 print("\nEmployees Hired by Year:")
 print(hire_year)
 
+
 plt.figure(figsize=(10, 5))
 
-hire_year.plot(kind="line", marker="o")
+hire_year.plot(
+    kind="line",
+    marker="o"
+)
 
 plt.title("Employee Hiring Trend")
 plt.xlabel("Hire Year")
-plt.ylabel("Number of Employees")
+plt.ylabel("Number of Employees Hired")
 plt.grid(True)
 plt.tight_layout()
 
 plt.savefig(
-    "results/hiring_trend.png",
+    os.path.join(
+        RESULTS_DIR,
+        "hiring_trend.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 14. Termination Trend by Year
-# ---------------------------------------
+
+# ============================================================
+# 16. TERMINATION TREND
+# ============================================================
 
 termination_year = (
-    df.loc[df["status"] == "Terminated", "termdate"]
+    df.loc[
+        df["status"] == "Terminated",
+        "termdate"
+    ]
     .dt.year
     .value_counts()
     .sort_index()
@@ -282,9 +472,13 @@ termination_year = (
 print("\nTerminations by Year:")
 print(termination_year)
 
+
 plt.figure(figsize=(10, 5))
 
-termination_year.plot(kind="line", marker="o")
+termination_year.plot(
+    kind="line",
+    marker="o"
+)
 
 plt.title("Employee Termination Trend")
 plt.xlabel("Termination Year")
@@ -293,29 +487,175 @@ plt.grid(True)
 plt.tight_layout()
 
 plt.savefig(
-    "results/termination_trend.png",
+    os.path.join(
+        RESULTS_DIR,
+        "termination_trend.png"
+    ),
     dpi=300
 )
 
-plt.show()
+plt.close()
 
-# ---------------------------------------
-# 15. Average Tenure
-# ---------------------------------------
 
-average_tenure = df["tenure_years"].mean()
+# ============================================================
+# 17. HR FINDINGS
+# ============================================================
 
-print(
-    f"\nAverage Employee Tenure: {average_tenure:.2f} years"
+highest_termination_department = (
+    department_termination.index[0]
 )
 
-# ---------------------------------------
-# 16. Save Cleaned Dataset
-# ---------------------------------------
+highest_termination_rate = (
+    department_termination.iloc[0]
+)
+
+most_common_job_title = (
+    df["jobtitle"]
+    .value_counts()
+    .index[0]
+)
+
+
+print("\n")
+print("=" * 50)
+print("KEY HR FINDINGS")
+print("=" * 50)
+
+print(
+    f"Total Employees: "
+    f"{total_employees}"
+)
+
+print(
+    f"Active Employees: "
+    f"{active_employees}"
+)
+
+print(
+    f"Terminated Employees: "
+    f"{terminated_employees}"
+)
+
+print(
+    f"Overall Termination Rate: "
+    f"{termination_rate:.2f}%"
+)
+
+print(
+    f"Average Employee Age: "
+    f"{average_age:.1f} years"
+)
+
+print(
+    f"Average Employee Tenure: "
+    f"{average_tenure:.1f} years"
+)
+
+print(
+    f"Department with Highest Termination Rate: "
+    f"{highest_termination_department}"
+)
+
+print(
+    f"Highest Department Termination Rate: "
+    f"{highest_termination_rate:.2f}%"
+)
+
+print(
+    f"Most Common Job Title: "
+    f"{most_common_job_title}"
+)
+
+
+# ============================================================
+# 18. SAVE CLEANED DATA
+# ============================================================
+
+cleaned_data_path = os.path.join(
+    RESULTS_DIR,
+    "cleaned_hr_data.csv"
+)
 
 df.to_csv(
-    "results/cleaned_hr_data.csv",
+    cleaned_data_path,
     index=False
 )
 
-print("\nHR Analytics completed successfully.")
+
+# ============================================================
+# 19. COMPLETION MESSAGE
+# ============================================================
+
+print("\n")
+print("=" * 50)
+print("HR ANALYTICS COMPLETED SUCCESSFULLY")
+print("=" * 50)
+
+print("\nResults saved in:")
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "employees_by_department.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "employee_status_distribution.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "termination_rate_by_department.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "employees_by_gender.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "termination_rate_by_gender.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "employee_age_distribution.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "top_job_titles.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "hiring_trend.png"
+    )
+)
+
+print(
+    os.path.join(
+        RESULTS_DIR,
+        "termination_trend.png"
+    )
+)
+
+print(
+    cleaned_data_path
+)
